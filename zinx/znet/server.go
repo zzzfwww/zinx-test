@@ -1,6 +1,7 @@
 package znet
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"zinx-test/zinx/ziface"
@@ -14,13 +15,23 @@ type Server struct {
 	Port      int
 }
 
+// 定义当前客户端链接的所绑定handler api（目前这个handler是写死的，以后优化应该由用户
+func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
+	// 回显的业务
+	fmt.Println("[Conn Handle] CallbackToClient...")
+	if _, err := conn.Write(data[:cnt]); err != nil {
+		fmt.Println("write back buf err", err)
+		return errors.New("CallBackToClient")
+	}
+	return nil
+}
+
 func (s *Server) Start() {
-	fmt.Printf("[Start] Server Listenner at IP: %s, Port:%d,is starting\n",
-		s.IP, s.Port)
+	fmt.Printf("[Start] Server Listenner at IP: %s, Port:%d,is starting\n", s.IP, s.Port)
 	go func() {
 		addr, err := net.ResolveTCPAddr(s.IPVersion, fmt.Sprintf("%s:%d", s.IP, s.Port))
 		if err != nil {
-			fmt.Println("resolve tcp addr error :", err)
+			fmt.Println("resolve tcp addr error:", err)
 			return
 		}
 
@@ -30,6 +41,8 @@ func (s *Server) Start() {
 			return
 		}
 		fmt.Println("start Zinx server succ,", s.Name, "succ, Listening...")
+		var cid uint32
+		cid = 0
 		for {
 			// 如果有客户端链接过来，阻塞会返回
 			conn, err := listenner.AcceptTCP()
@@ -37,24 +50,12 @@ func (s *Server) Start() {
 				fmt.Println("Accept err", err)
 				continue
 			}
-			// 已经与客户端建立链接，做一些业务，做一个最基本的512字节长度回显业务
-			go func() {
-				for {
-					buf := make([]byte, 512)
-					cnt, err := conn.Read(buf)
-					if err != nil {
-						fmt.Println("recv buf err", err)
-						continue
-					}
-					fmt.Println("rec", string(buf), "cnt", cnt)
+			//将处理新链接额业务方法和conn进行绑定，得到我们链接模块
+			dealConn := NewConnection(conn, cid, CallBackToClient)
+			cid++
 
-					// 回显功能
-					if _, err := conn.Write(buf[:cnt]); err != nil {
-						fmt.Println("write back buff err", err)
-						continue
-					}
-				}
-			}()
+			// 启动当前链接
+			go dealConn.Start()
 		}
 	}()
 }
