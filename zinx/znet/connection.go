@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"zinx-test/zinx/utils"
 	"zinx-test/zinx/ziface"
 )
@@ -25,6 +26,10 @@ type Connection struct {
 	msgChan chan []byte
 	// 消息的管理msgId和对应的处理业务的api
 	MsgHandler ziface.IMsgHandle
+	// 链接的属性集合
+	property map[string]interface{}
+	// 保护链接属性的锁
+	propertyLock sync.RWMutex
 }
 
 func NewConnection(server ziface.IServer, conn *net.TCPConn, connID uint32, msgHandler ziface.IMsgHandle) *Connection {
@@ -36,6 +41,7 @@ func NewConnection(server ziface.IServer, conn *net.TCPConn, connID uint32, msgH
 		isClosed:   false,
 		msgChan:    make(chan []byte),
 		ExitChan:   make(chan bool, 1),
+		property:   make(map[string]interface{}),
 	}
 	// 将conn加入到ConnManager里
 	c.TcpServer.GetConnMgr().Add(c)
@@ -175,4 +181,34 @@ func (c *Connection) GetConnID() uint32 {
 // 获取远程客户端的TCP状态 IP port
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.Conn.RemoteAddr()
+}
+
+// 设置链接属性
+func (c *Connection) SetProperty(key string, value interface{}) {
+	c.propertyLock.Lock()
+	defer c.propertyLock.Unlock()
+
+	c.property[key] = value
+
+}
+
+// 获取链接属性
+func (c *Connection) GetProperty(key string) (interface{}, error) {
+	c.propertyLock.RLock()
+	defer c.propertyLock.RUnlock()
+
+	if value, ok := c.property[key]; ok {
+		return value, nil
+	} else {
+		return nil, errors.New("no property found")
+	}
+
+}
+
+// 移除链接属性
+func (c *Connection) RemoveProperty(key string) {
+	c.propertyLock.Lock()
+	defer c.propertyLock.Unlock()
+	// 删除属性
+	delete(c.property, key)
 }
