@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"zinx-test/zinx/utils"
 	"zinx-test/zinx/ziface"
 )
 
@@ -38,7 +39,7 @@ func NewConnection(conn *net.TCPConn, connID uint32, msgHandler ziface.IMsgHandl
 // 链接的读业务方法
 func (c *Connection) StartReader() {
 	fmt.Println("[Reader Goroutine is running ...]")
-	defer fmt.Println("connID = ", c.ConnID, "[Reader is exit] remote addr is ", c.RemoteAddr().String())
+	defer fmt.Println("[Reader is exit] connID = ", c.ConnID, "remote addr is ", c.RemoteAddr().String())
 	defer c.Stop()
 	for {
 		// 读取客户端的数据到buf中
@@ -77,8 +78,13 @@ func (c *Connection) StartReader() {
 			conn: c,
 			msg:  msg,
 		}
-		// 根据绑定好的MsgID找到对应处理的api业务
-		go c.MsgHandler.DoMsgHandler(&req)
+		if utils.GlobalObject.WorkerPoolSize > 0 {
+			// 已经开启工作池机制，将消息发送给worker工作池处理即可
+			c.MsgHandler.SendMsgToTaskQueue(&req)
+		} else {
+			// 根据绑定好的MsgID找到对应处理的api业务
+			go c.MsgHandler.DoMsgHandler(&req)
+		}
 	}
 }
 
@@ -102,7 +108,7 @@ func (c *Connection) SendMsg(msgId uint32, data []byte) error {
 // 写消息的goroutine 专门发送给客户端消息的模块
 func (c *Connection) StartWriter() {
 	fmt.Println("[Writer goroutine is running ...]")
-	defer fmt.Println(c.RemoteAddr().String(), "[conn Writer exit!]")
+	defer fmt.Println("[conn Writer exit!]", c.RemoteAddr().String())
 	// 不断的阻塞的等待channel的消息，进行写给客户端
 	for {
 		select {
